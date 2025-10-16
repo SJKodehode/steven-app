@@ -14,6 +14,7 @@ import {
   Typography,
   Paper,
 } from "@mui/material";
+import { isDate } from "util/types";
 
 type Target = {
   key: string;
@@ -22,12 +23,27 @@ type Target = {
   defaultOn?: boolean;
 };
 
+const dateToday = () => {
+  const d = new Date();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+};
+const dateTwoMonths = () => {
+  const d = new Date();
+  const month = (d.getMonth() + 3).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+};
+
+
 const TARGETS: Target[] = [
   { key: "google", label: "Google", buildUrl: q => `https://www.google.com/search?q=${q}`, defaultOn: true },
   { key: "gnews", label: "Google News", buildUrl: q => `https://news.google.com/search?q=${q}`, defaultOn: true },
   { key: "linkedin", label: "LinkedIn (People)", buildUrl: q => `https://www.linkedin.com/search/results/all/?keywords=${q}&origin=GLOBAL_SEARCH_HEADER&sid=noz`, defaultOn: true },
   { key: "lovdata", label: "Lovdata", buildUrl: q => `https://lovdata.no/pro/#result&id=${Math.floor(Math.random()*4000)}&q=${q}`, defaultOn: true },
   { key: "proff", label: "Proff.no (firma)", buildUrl: q => `https://www.proff.no/bransjes%C3%B8k?q=${q}`, defaultOn: true },
+  { key: "Når går rettssaken", label: "Domsstol.no", buildUrl: q => `https://www.domstol.no/no/nar-gar-rettssaken/?fraDato=${dateToday()}&tilDato=${dateTwoMonths()}&domstolid=&sortTerm=rettsmoete&sortAscending=true&pageSize=1000&query=${q}&page=1`, defaultOn: true },
 ];
 
 export default function App() {
@@ -159,5 +175,6 @@ export default function App() {
         </Typography>
       </Paper>
     </Box>
+    
   );
 }
