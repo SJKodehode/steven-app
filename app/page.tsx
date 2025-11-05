@@ -14,7 +14,6 @@ import {
   Typography,
   Paper,
 } from "@mui/material";
-import { isDate } from "util/types";
 
 type Target = {
   key: string;
@@ -547,7 +546,7 @@ function FuzzyMatcher() {
         JSON Matcher (firms vs. cases)
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Upload two JSON files. One should list law firms; the other should list cases (strings or objects). We’ll fuzzy-match and highlight likely connections.
+        Upload two JSON files. One should list law firms; the other should list cases (strings or objects).
       </Typography>
 
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
