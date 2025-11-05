@@ -14,6 +14,17 @@ import {
   Typography,
   Paper,
 } from "@mui/material";
+// Types for optional fast-fuzzy usage without explicit any
+type AnyRecord = Record<string, unknown>;
+interface FastFuzzySearcher {
+  search: (query: string, options?: { threshold?: number }) => Array<{ item: string; score: number }> | string[];
+}
+interface FastFuzzyModule {
+  Searcher?: new (
+    haystack: string[],
+    options?: { keySelector?: (s: string) => string; ignoreCase?: boolean; returnMatchData?: boolean }
+  ) => FastFuzzySearcher;
+}
 
 type Target = {
   key: string;
@@ -189,12 +200,12 @@ function FuzzyMatcher() {
   const [onlyOsloTingrett, setOnlyOsloTingrett] = React.useState<boolean>(true);
   const [strictLastName, setStrictLastName] = React.useState<boolean>(true);
   const [keywordsRaw, setKeywordsRaw] = React.useState<string>("");
-  const [ff, setFf] = React.useState<any>(null);
+  const [ff, setFf] = React.useState<FastFuzzyModule | null>(null);
 
   React.useEffect(() => {
     let mounted = true;
-    import("fast-fuzzy").then(mod => {
-      if (mounted) setFf(mod);
+    import("fast-fuzzy").then((mod) => {
+      if (mounted) setFf(mod as unknown as FastFuzzyModule);
     }).catch(() => {
       if (mounted) setFf(null);
     });
@@ -230,8 +241,16 @@ function FuzzyMatcher() {
       .split(" ")
       .filter(Boolean);
 
-  const reprForObject = (o: any): string => {
+  const getString = (obj: AnyRecord, key: string): string | undefined =>
+    typeof obj[key] === "string" ? (obj[key] as string) : undefined;
+  const getArrayOfStrings = (obj: AnyRecord, key: string): string[] =>
+    Array.isArray(obj[key])
+      ? (obj[key] as unknown[]).filter((x): x is string => typeof x === "string")
+      : [];
+
+  const reprForObject = (o: unknown): string => {
     if (!o || typeof o !== "object") return String(o ?? "");
+    const obj = o as AnyRecord;
     // Prefer common keys if present
     const preferred = [
       "navn",
@@ -251,40 +270,41 @@ function FuzzyMatcher() {
       "saksnummer",
     ];
     for (const k of preferred) {
-      if (typeof (o as any)[k] === "string") return (o as any)[k] as string;
-      if (Array.isArray((o as any)[k])) {
-        const arr = (o as any)[k].filter((x: any) => typeof x === "string");
-        if (arr.length) return arr.join(" ");
-      }
+      const str = getString(obj, k);
+      if (str) return str;
+      const arr = getArrayOfStrings(obj, k);
+      if (arr.length) return arr.join(" ");
     }
     // Fallback: join all string values at top-level
-    const strings = Object.values(o).filter(v => typeof v === "string") as string[];
+    const strings = Object.values(obj).filter((v): v is string => typeof v === "string");
     if (strings.length) return strings.join(" ");
-    return JSON.stringify(o);
+    return JSON.stringify(obj);
   };
 
-  const extractStrings = (data: any, kind?: "firms" | "cases"): string[] => {
+  const extractStrings = (data: unknown, kind?: "firms" | "cases"): string[] => {
     if (!data) return [];
     if (typeof data === "string") return [data];
     if (Array.isArray(data)) {
       const out: string[] = [];
-      for (const item of data) {
+      for (const item of data as unknown[]) {
         if (typeof item === "string") out.push(item);
         else if (item && typeof item === "object") {
-          if (kind === "firms" && typeof (item as any).navn === "string") out.push((item as any).navn);
+          const obj = item as AnyRecord;
+          if (kind === "firms" && typeof obj.navn === "string") out.push(obj.navn as string);
           else if (kind === "cases") {
             const fields: string[] = [];
-            const pushIf = (v: any) => { if (typeof v === "string" && v.trim()) fields.push(v); };
-            pushIf((item as any).domstol);
-            pushIf((item as any).sakenGjelder);
-            pushIf((item as any).AdvokaterLang);
-            pushIf((item as any).ParterLang);
-            pushIf((item as any).parter);
-            if (Array.isArray((item as any).bistandsadvokater)) {
-              const arr = ((item as any).bistandsadvokater as any[]).filter(x => typeof x === "string");
+            const pushIf = (v: unknown) => { if (typeof v === "string" && v.trim()) fields.push(v); };
+            pushIf((obj as AnyRecord).domstol);
+            pushIf((obj as AnyRecord).sakenGjelder);
+            pushIf((obj as AnyRecord).AdvokaterLang);
+            pushIf((obj as AnyRecord).ParterLang);
+            pushIf((obj as AnyRecord).parter);
+            const ba = (obj as AnyRecord).bistandsadvokater;
+            if (Array.isArray(ba)) {
+              const arr = (ba as unknown[]).filter((x): x is string => typeof x === "string");
               if (arr.length) fields.push(arr.join(" - "));
             }
-            pushIf((item as any).saksnummer);
+            pushIf((obj as AnyRecord).saksnummer);
             if (!fields.length) out.push(reprForObject(item)); else out.push(fields.join(" "));
           } else out.push(reprForObject(item));
         }
@@ -293,23 +313,25 @@ function FuzzyMatcher() {
     }
     if (typeof data === "object") {
       // Handle wrapper objects with a hits array (e.g., { hits: [...] })
-      if (kind === "cases" && Array.isArray((data as any).hits)) {
-        return extractStrings((data as any).hits, kind);
+      const obj = data as AnyRecord;
+      if (kind === "cases" && Array.isArray(obj.hits)) {
+        return extractStrings(obj.hits, kind);
       }
-      if (kind === "firms" && typeof (data as any).navn === "string") return [(data as any).navn];
+      if (kind === "firms" && typeof obj.navn === "string") return [obj.navn as string];
       if (kind === "cases") {
         const fields: string[] = [];
-        const pushIf = (v: any) => { if (typeof v === "string" && v.trim()) fields.push(v); };
-        pushIf((data as any).domstol);
-        pushIf((data as any).sakenGjelder);
-        pushIf((data as any).AdvokaterLang);
-        pushIf((data as any).ParterLang);
-        pushIf((data as any).parter);
-        if (Array.isArray((data as any).bistandsadvokater)) {
-          const arr = ((data as any).bistandsadvokater as any[]).filter(x => typeof x === "string");
+        const pushIf = (v: unknown) => { if (typeof v === "string" && v.trim()) fields.push(v); };
+        pushIf(obj.domstol);
+        pushIf(obj.sakenGjelder);
+        pushIf(obj.AdvokaterLang);
+        pushIf(obj.ParterLang);
+        pushIf(obj.parter);
+        const ba = obj.bistandsadvokater;
+        if (Array.isArray(ba)) {
+          const arr = (ba as unknown[]).filter((x): x is string => typeof x === "string");
           if (arr.length) fields.push(arr.join(" - "));
         }
-        pushIf((data as any).saksnummer);
+        pushIf(obj.saksnummer);
         if (fields.length) return [fields.join(" ")];
       }
       return [reprForObject(data)];
@@ -339,50 +361,54 @@ function FuzzyMatcher() {
     return Array.from(new Set(out.filter(Boolean)));
   };
 
-  const extractCaseRecords = (data: any): CaseRecord[] => {
+  const extractCaseRecords = (data: unknown): CaseRecord[] => {
     // Normalize to an array of items if possible
-    const items = Array.isArray(data)
-      ? data
-      : (data && typeof data === "object" && Array.isArray((data as any).hits) ? (data as any).hits : null);
+    const items: unknown[] | null = Array.isArray(data)
+      ? (data as unknown[])
+      : (data && typeof data === "object" && Array.isArray((data as AnyRecord).hits) ? ((data as AnyRecord).hits as unknown[]) : null);
 
-    const makeTextFromItem = (item: any): string => {
+    const makeTextFromItem = (item: unknown): string => {
       if (typeof item === "string") return item;
       if (item && typeof item === "object") {
+        const obj = item as AnyRecord;
         const fields: string[] = [];
-        const pushIf = (v: any) => { if (typeof v === "string" && v.trim()) fields.push(v); };
-        pushIf((item as any).domstol);
-        pushIf((item as any).sakenGjelder);
-        pushIf((item as any).AdvokaterLang);
-        pushIf((item as any).ParterLang);
-        pushIf((item as any).parter);
-        if (Array.isArray((item as any).bistandsadvokater)) {
-          const arr = ((item as any).bistandsadvokater as any[]).filter(x => typeof x === "string");
+        const pushIf = (v: unknown) => { if (typeof v === "string" && v.trim()) fields.push(v); };
+        pushIf(obj.domstol);
+        pushIf(obj.sakenGjelder);
+        pushIf(obj.AdvokaterLang);
+        pushIf(obj.ParterLang);
+        pushIf(obj.parter);
+        const ba = obj.bistandsadvokater;
+        if (Array.isArray(ba)) {
+          const arr = (ba as unknown[]).filter((x): x is string => typeof x === "string");
           if (arr.length) fields.push(arr.join(" - "));
         }
-        pushIf((item as any).saksnummer);
+        pushIf(obj.saksnummer);
         return fields.length ? fields.join(" ") : reprForObject(item);
       }
       return String(item ?? "");
     };
 
-    const makeLastNames = (item: any): Set<string> => {
-      const fromArrays = Array.isArray((item as any)?.bistandsadvokater)
-        ? (item as any).bistandsadvokater.flatMap((s: any) => extractLastNames(String(s || "")))
+    const makeLastNames = (item: unknown): Set<string> => {
+      const obj = (item ?? {}) as AnyRecord;
+      const ba = obj?.bistandsadvokater;
+      const fromArrays = Array.isArray(ba)
+        ? (ba as unknown[]).flatMap((s) => extractLastNames(String((s as string) || "")))
         : [];
       const all = [
-        ...extractLastNames(String((item as any)?.AdvokaterLang || "")),
-        ...extractLastNames(String((item as any)?.ParterLang || "")),
-        ...extractLastNames(String((item as any)?.parter || "")),
-        ...extractLastNames(String((item as any)?.RettensFormann || "")),
+        ...extractLastNames(String((obj as AnyRecord)?.AdvokaterLang || "")),
+        ...extractLastNames(String((obj as AnyRecord)?.ParterLang || "")),
+        ...extractLastNames(String((obj as AnyRecord)?.parter || "")),
+        ...extractLastNames(String((obj as AnyRecord)?.RettensFormann || "")),
         ...fromArrays,
       ].filter(Boolean);
       return new Set<string>(all);
     };
 
     if (items) {
-      return items.map((item: any) => ({
+      return items.map((item) => ({
         text: makeTextFromItem(item),
-        domstol: typeof item === "object" ? (item as any).domstol : undefined,
+        domstol: typeof item === "object" && item !== null ? (item as AnyRecord).domstol as string | undefined : undefined,
         lastNames: makeLastNames(item),
       }));
     }
@@ -418,11 +444,11 @@ function FuzzyMatcher() {
   }, [casesDataAll, onlyOsloTingrett]);
   const casesStrings = React.useMemo(() => casesData.map(c => c.text), [casesData]);
 
-  const ffSearcher = React.useMemo(() => {
+  const ffSearcher = React.useMemo<FastFuzzySearcher | null>(() => {
     if (!ff || !casesStrings.length) return null;
     try {
-      if ((ff as any).Searcher) {
-        return new (ff as any).Searcher(casesStrings, { keySelector: (s: string) => s, ignoreCase: true, returnMatchData: true });
+      if (ff.Searcher) {
+        return new ff.Searcher(casesStrings, { keySelector: (s: string) => s, ignoreCase: true, returnMatchData: true });
       }
       return null;
     } catch {
@@ -464,18 +490,20 @@ function FuzzyMatcher() {
         });
         hits = matched.map(m => ({ text: m.text, score: 1 }));
       } else {
-        if (ffSearcher && typeof (ffSearcher as any).search === "function") {
+        if (ffSearcher && typeof ffSearcher.search === "function") {
           try {
-            const res = (ffSearcher as any).search(f, { threshold });
-            if (Array.isArray(res) && res.length && typeof res[0] === "object" && "item" in res[0]) {
-              hits = (res as any[])
-                .map((r: any) => ({ text: String(r.item), score: typeof r.score === "number" ? r.score : 0 }))
+            const res = ffSearcher.search(f, { threshold });
+            if (Array.isArray(res) && res.length && typeof res[0] === "object" && res[0] !== null && "item" in (res[0] as object)) {
+              const arr = res as Array<{ item: string; score: number }>;
+              hits = arr
+                .map((r) => ({ text: String(r.item), score: typeof r.score === "number" ? r.score : 0 }))
                 .filter(x => x.score >= threshold)
                 .sort((a, b) => b.score - a.score)
                 .slice(0, 10);
             } else if (Array.isArray(res)) {
-              hits = (res as any[])
-                .map((text: any) => ({ text: String(text), score: score(f, String(text)) }))
+              const arr = res as string[];
+              hits = arr
+                .map((text) => ({ text: String(text), score: score(f, String(text)) }))
                 .filter(x => x.score >= threshold)
                 .sort((a, b) => b.score - a.score)
                 .slice(0, 10);
